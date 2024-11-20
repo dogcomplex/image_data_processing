@@ -70,12 +70,11 @@ def zoom_and_crop_face(
 
 def process_folder(
     input_folder: str | Path,
-    output_folder: str = "zoomed_faces",
+    output_path: Path,
     zoom_factor: float = 1.5
 ) -> None:
     """Process all images in the input folder."""
     input_path = Path(input_folder)
-    output_path = input_path.parent / output_folder
     output_path.mkdir(exist_ok=True)
     
     image_extensions = {'.jpg', '.jpeg', '.png'}

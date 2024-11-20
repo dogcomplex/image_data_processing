@@ -74,14 +74,18 @@ def crop_around_point(image, center_x, center_y, target_size):
     
     return image[top:bottom, left:right]
 
-def process_folder(input_folder, output_folder="face_cropped", target_size=512, debug=True):
+def process_folder(
+    input_folder: str | Path,
+    output_path: Path,
+    target_size: int = 512,
+    debug: bool = True
+) -> None:
     """Process all images in the input folder."""
     input_path = Path(input_folder)
-    output_path = input_path.parent / output_folder
     output_path.mkdir(exist_ok=True)
     
     if debug:
-        debug_path = input_path.parent / f"{output_folder}_debug"
+        debug_path = output_path.parent / f"{output_path.name}_debug"
         debug_path.mkdir(exist_ok=True)
     
     image_extensions = {'.jpg', '.jpeg', '.png'}

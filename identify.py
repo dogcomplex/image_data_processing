@@ -20,7 +20,7 @@ def load_face_encodings(image_path: Path) -> List[np.ndarray]:
 
 def process_folder(
     input_folder: str | Path,
-    output_folder: str = "identified",
+    output_path: Path,
     tolerance: float = 0.6,
     min_cluster_size: int = 3
 ) -> None:
@@ -30,12 +30,11 @@ def process_folder(
     
     Args:
         input_folder: Path to input folder containing images
-        output_folder: Name of output folder for filtered images
+        output_path: Path to output folder for filtered images
         tolerance: DBSCAN distance tolerance (lower = stricter matching)
         min_cluster_size: Minimum cluster size to consider as valid
     """
     input_path = Path(input_folder)
-    output_path = input_path.parent / output_folder
     output_path.mkdir(exist_ok=True)
     
     # Collect face encodings and file paths

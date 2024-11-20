@@ -39,17 +39,13 @@ def resize_image(
 
 def batch_resize_images(
     input_folder: str | Path,
+    output_path: Path,
     target_size: int = 512,
     quality: int = 95,
-    extensions: tuple = ('.jpg', '.jpeg', '.png', '.webp'),
-    output_folder: str = "resized"
+    extensions: tuple = ('.jpg', '.jpeg', '.png', '.webp')
 ) -> None:
-    """Resize all images in a folder to have smallest dimension = target_size."""
+    """Resize all images in a folder"""
     input_path = Path(input_folder)
-    if not input_path.exists():
-        raise ValueError(f"Input folder does not exist: {input_folder}")
-    
-    output_path = input_path.parent / output_folder
     output_path.mkdir(exist_ok=True)
     
     for image_file in input_path.iterdir():

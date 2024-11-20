@@ -7,199 +7,160 @@ from single_face import filter_single_face_images
 from zoom_face import process_folder as zoom_process
 from filter import filter_by_resolution
 from identify import process_folder as identify_process
-
-def create_pipeline_folders(base_path: Path) -> tuple[Path, Path, Path]:
-    """Create and return paths for each stage of the pipeline"""
-    selected = base_path / "1_selected"
-    resized = base_path / "2_resized"
-    face_cropped = base_path / "3_face_cropped"
-    
-    for path in (selected, resized, face_cropped):
-        path.mkdir(exist_ok=True)
-    
-    return selected, resized, face_cropped
-
-
+from pipeline_config import PipelineConfig, make_stage_folder
 
 def process_images(
     input_dir: str | Path,
-    target_size: int = 512,
-    file_pattern: str = "*.jpg",
-    prefix_separator: str = "_",
-    jpeg_quality: int = 95,
-    selected_folder: str = "selected",
-    resized_folder: str = "resized",
-    face_cropped_folder: str = "face_cropped",
-    single_face_folder: str = "single_face",
-    identified_folder: str = "identified"
+    config: PipelineConfig = PipelineConfig()
 ) -> None:
     """Run the complete image processing pipeline"""
     input_path = Path(input_dir)
     if not input_path.exists():
         raise ValueError(f"Input directory does not exist: {input_dir}")
     
-    # Step 1: Select best images
-    print("\n=== Step 1: Selecting best images ===")
-    for pattern in file_pattern.split(","):
-        pattern = pattern.strip()
-        print(f"Processing pattern: {pattern}")
-        config = ImageSelectionConfig(
-            target_size=target_size,
-            output_folder=selected_folder,
-            file_pattern=pattern,
-            prefix_separator=prefix_separator
+    # Create stage folders with config hashes
+    selected_path = make_stage_folder(input_path, "selected", config, input_path)
+    resized_path = make_stage_folder(input_path, "resized", config, selected_path)
+    face_cropped_path = make_stage_folder(input_path, "face_cropped", config, resized_path)
+    single_face_path = make_stage_folder(input_path, "single_face", config, face_cropped_path)
+    identified_path = make_stage_folder(input_path, "identified", config, single_face_path)
+    
+    # Track which stages need processing
+    needs_processing = {
+        "selected": not any(selected_path.iterdir()),
+        "resized": not any(resized_path.iterdir()),
+        "face_cropped": not any(face_cropped_path.iterdir()),
+        "single_face": not any(single_face_path.iterdir()),
+        "identified": not any(identified_path.iterdir())
+    }
+    
+    # Process stages in order, tracking dependencies
+    if needs_processing["selected"]:
+        print("\n=== Step 1: Selecting best images ===")
+        for pattern in config.file_pattern.split(","):
+            pattern = pattern.strip()
+            print(f"Processing pattern: {pattern}")
+            selection_config = ImageSelectionConfig(
+                target_size=config.target_size,
+                file_pattern=pattern,
+                prefix_separator=config.prefix_separator
+            )
+            select_best_images(input_path, selected_path, selection_config)
+        # Invalidate all downstream stages
+        needs_processing.update({k: True for k in ["resized", "face_cropped", "single_face", "identified"]})
+    
+    if needs_processing["resized"]:
+        print("\n=== Step 2: Resizing images ===")
+        batch_resize_images(
+            selected_path,
+            target_size=config.target_size,
+            quality=config.jpeg_quality,
+            output_path=resized_path
         )
-        select_best_images(str(input_path), config)
+        # Invalidate downstream stages
+        needs_processing.update({k: True for k in ["face_cropped", "single_face", "identified"]})
     
-    # Count files in selected folder
-    selected_path = input_path / selected_folder
-    selected_files = list(selected_path.glob("*.*"))
-    print(f"Selected {len(selected_files)} files")
+    if needs_processing["face_cropped"]:
+        print("\n=== Step 3: Face cropping ===")
+        process_folder(
+            resized_path, 
+            output_path=face_cropped_path,
+            target_size=config.target_size
+        )
+        # Invalidate downstream stages
+        needs_processing.update({k: True for k in ["single_face", "identified"]})
     
-    # Step 2: Resize images
-    print("\n=== Step 2: Resizing images ===")
-    batch_resize_images(
-        selected_path,
-        target_size=target_size,
-        quality=jpeg_quality,
-        extensions=tuple(p.replace("*", "") for p in file_pattern.split(",")),
-        output_folder=resized_folder
-    )
+    if needs_processing["single_face"]:
+        print("\n=== Step 4: Filtering single face images ===")
+        filter_single_face_images(
+            face_cropped_path,
+            output_path=single_face_path
+        )
+        # Invalidate downstream stage
+        needs_processing["identified"] = True
     
-    # Count files in resized folder
-    resized_path = input_path / resized_folder
-    resized_files = list(resized_path.glob("*.*"))
-    print(f"Resized {len(resized_files)} files")
+    if needs_processing["identified"]:
+        print("\n=== Step 5: Filtering for matching faces ===")
+        identify_process(
+            single_face_path,
+            output_path=identified_path,
+            tolerance=config.face_tolerance,
+            min_cluster_size=config.min_cluster_size
+        )
     
-    # Step 3: Face crop
-    print("\n=== Step 3: Face cropping ===")
-    process_folder(
-        resized_path, 
-        output_folder=face_cropped_folder,
-        target_size=target_size
-    )
-    
-    # Count files in face_cropped folder
-    face_cropped_path = input_path / face_cropped_folder
-    cropped_files = list(face_cropped_path.glob("*.*"))
-    print(f"Face cropped {len(cropped_files)} files")
-    
-    # Step 4: Filter single face images
-    print("\n=== Step 4: Filtering single face images ===")
-    filter_single_face_images(
-        face_cropped_path,
-        output_folder=single_face_folder
-    )
-    
-    # Count files in single_face folder
-    single_face_path = input_path / single_face_folder
-    single_face_files = list(single_face_path.glob("*.*"))
-    print(f"Found {len(single_face_files)} images with single faces")
-    
-    # Step 5: Filter for matching faces
-    print("\n=== Step 5: Filtering for matching faces ===")
-    identify_process(
-        single_face_path,
-        output_folder=identified_folder
-    )
-    
-    # Count files in identified folder
-    identified_path = input_path / identified_folder
-    identified_files = list(identified_path.glob("*.*"))
-    print(f"Kept {len(identified_files)} images with matching faces")
-
+    # Print final statistics
+    print("\nPipeline completed!")
+    print(f"Selected: {len(list(selected_path.glob('*.*')))} images")
+    print(f"Resized: {len(list(resized_path.glob('*.*')))} images")
+    print(f"Face cropped: {len(list(face_cropped_path.glob('*.*')))} images")
+    print(f"Single face: {len(list(single_face_path.glob('*.*')))} images")
+    print(f"Identified: {len(list(identified_path.glob('*.*')))} images")
 
 def process_images_zoom_face(
     input_dir: str | Path,
-    target_size: int = 512,
-    file_pattern: str = "*.jpg",
-    prefix_separator: str = "_",
-    jpeg_quality: int = 95,
-    zoom_factor: float = 1.5,
-    selected_folder: str = "1_selected",
-    single_face_folder: str = "2_single_face",
-    zoomed_folder: str = "3_zoomed",
-    filtered_folder: str = "4_filtered",
-    final_folder: str = "5_final",
-    identified_folder: str = "6_identified"
+    config: PipelineConfig = PipelineConfig()
 ) -> None:
     """Run the face-zooming image processing pipeline"""
     input_path = Path(input_dir)
     if not input_path.exists():
         raise ValueError(f"Input directory does not exist: {input_dir}")
     
-    # Step 1: Select best resolution images
-    print("\n=== Step 1: Selecting best resolution images ===")
-    for pattern in file_pattern.split(","):
-        pattern = pattern.strip()
-        print(f"Processing pattern: {pattern}")
-        config = ImageSelectionConfig(
-            target_size=target_size,
-            output_folder=selected_folder,
-            file_pattern=pattern,
-            prefix_separator=prefix_separator
+    # Create stage folders sequentially, waiting for each stage
+    selected_path = make_stage_folder(input_path, "1_selected", config, input_path)
+    if not any(selected_path.iterdir()):
+        print("\n=== Step 1: Selecting best resolution images ===")
+        for pattern in config.file_pattern.split(","):
+            pattern = pattern.strip()
+            selection_config = ImageSelectionConfig(
+                target_size=config.target_size,
+                file_pattern=pattern,
+                prefix_separator=config.prefix_separator
+            )
+            select_best_images(input_path, selected_path, selection_config)
+    
+    single_face_path = make_stage_folder(input_path, "2_single_face", config, selected_path)
+    if not any(single_face_path.iterdir()):
+        print("\n=== Step 2: Filtering single face images ===")
+        filter_single_face_images(selected_path, single_face_path)
+    
+    zoomed_path = make_stage_folder(input_path, "3_zoomed", config, single_face_path)
+    if not any(zoomed_path.iterdir()):
+        print("\n=== Step 3: Zooming into faces ===")
+        zoom_process(single_face_path, zoomed_path, zoom_factor=config.zoom_factor)
+    
+    filtered_path = make_stage_folder(input_path, "4_filtered", config, zoomed_path)
+    if not any(filtered_path.iterdir()):
+        print("\n=== Step 4: Filtering low resolution images ===")
+        filter_by_resolution(zoomed_path, filtered_path, config.target_size // 3)
+    
+    final_path = make_stage_folder(input_path, "5_final", config, filtered_path)
+    if not any(final_path.iterdir()):
+        print("\n=== Step 5: Final resize and face crop ===")
+        batch_resize_images(
+            filtered_path,
+            target_size=config.target_size,
+            quality=config.jpeg_quality,
+            output_path=final_path
         )
-        select_best_images(str(input_path), config)
     
-    selected_path = input_path / selected_folder
+    identified_path = make_stage_folder(input_path, "6_identified", config, final_path)
+    if not any(identified_path.iterdir()):
+        print("\n=== Step 6: Filtering for matching faces ===")
+        identify_process(
+            final_path,
+            output_path=identified_path,
+            tolerance=config.face_tolerance,
+            min_cluster_size=config.min_cluster_size
+        )
     
-    # Step 2: Filter for single face images
-    print("\n=== Step 2: Filtering single face images ===")
-    filter_single_face_images(
-        selected_path,
-        output_folder=single_face_folder
-    )
-    
-    single_face_path = input_path / single_face_folder
-    
-    # Step 3: Zoom into faces
-    print("\n=== Step 3: Zooming into faces ===")
-    zoom_process(
-        single_face_path,
-        output_folder=zoomed_folder,
-        zoom_factor=zoom_factor
-    )
-    
-    zoomed_path = input_path / zoomed_folder
-    
-    # Step 4: Filter out low resolution results
-    print("\n=== Step 4: Filtering low resolution images ===")
-    filter_by_resolution(
-        zoomed_path,
-        min_size=target_size // 3,
-        output_folder=filtered_folder
-    )
-    
-    filtered_path = input_path / filtered_folder
-    
-    # Step 5: Final resize and crop
-    print("\n=== Step 5: Final resize and face crop ===")
-    batch_resize_images(
-        filtered_path,
-        target_size=target_size,
-        quality=jpeg_quality,
-        output_folder=final_folder
-    )
-    
-    resized_path = input_path / final_folder
-    process_folder(
-        resized_path,
-        output_folder="final",
-        target_size=target_size
-    )
-    
-    # Step 6: Filter for matching faces
-    print("\n=== Step 6: Filtering for matching faces ===")
-    final_path = input_path / "final"
-    identify_process(
-        final_path,
-        output_folder=identified_folder
-    )
-    
-    # Count files in identified folder
-    identified_path = input_path / identified_folder
-    identified_files = list(identified_path.glob("*.*"))
-    print(f"Kept {len(identified_files)} images with matching faces")
+    # Print final statistics
+    print("\nPipeline completed!")
+    print(f"Selected: {len(list(selected_path.glob('*.*')))} images")
+    print(f"Single face: {len(list(single_face_path.glob('*.*')))} images")
+    print(f"Zoomed: {len(list(zoomed_path.glob('*.*')))} images")
+    print(f"Filtered: {len(list(filtered_path.glob('*.*')))} images")
+    print(f"Resized: {len(list(final_path.glob('*.*')))} images")
+    print(f"Identified: {len(list(identified_path.glob('*.*')))} images")
 
 def main():
     parser = argparse.ArgumentParser(description='Process images through selection, resizing, and face cropping')
@@ -229,43 +190,23 @@ def main():
     
     args = parser.parse_args()
     
+    # Create config from arguments
+    config = PipelineConfig(
+        target_size=args.target_size,
+        file_pattern=args.file_pattern,
+        prefix_separator=args.prefix_separator,
+        jpeg_quality=args.jpeg_quality,
+        zoom_factor=args.zoom_factor,
+        face_tolerance=0.6,  # Could add as CLI arg
+        min_cluster_size=3   # Could add as CLI arg
+    )
+    
     try:
-        # List input files before processing
-        input_path = Path(args.input_dir)
-        input_files = []
-        for pattern in args.file_pattern.split(","):
-            pattern = pattern.strip()
-            matched_files = list(input_path.glob(pattern))
-            input_files.extend(matched_files)
-            print(f"Found {len(matched_files)} files matching pattern {pattern}")
-        
-        if not input_files:
-            print("No input files found! Please check your file patterns and input directory.")
-            return
-
         if args.zoom_face:
-            process_images_zoom_face(
-                args.input_dir,
-                target_size=args.target_size,
-                file_pattern=args.file_pattern,
-                prefix_separator=args.prefix_separator,
-                jpeg_quality=args.jpeg_quality,
-                zoom_factor=args.zoom_factor,
-                identified_folder=args.identified_folder
-            )
+            process_images_zoom_face(args.input_dir, config)
         else:
-            process_images(
-                args.input_dir,
-                target_size=args.target_size,
-                file_pattern=args.file_pattern,
-                prefix_separator=args.prefix_separator,
-                jpeg_quality=args.jpeg_quality,
-                selected_folder=args.selected_folder,
-                resized_folder=args.resized_folder,
-                face_cropped_folder=args.face_cropped_folder,
-                single_face_folder=args.single_face_folder,
-                identified_folder=args.identified_folder
-            )
+            process_images(args.input_dir, config)
+            
         print("\nImage processing pipeline completed successfully!")
         
     except Exception as e:

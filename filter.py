@@ -4,14 +4,18 @@ import shutil
 
 def filter_by_resolution(
     input_folder: str | Path,
-    min_size: int,
-    output_folder: str = "filtered"
+    output_path: Path,
+    min_size: int
 ) -> None:
     """
     Copy images that meet minimum resolution requirements to output folder.
+    
+    Args:
+        input_folder: Source folder containing images
+        output_path: Full path to output folder
+        min_size: Minimum width/height in pixels
     """
     input_path = Path(input_folder)
-    output_path = input_path.parent / output_folder
     output_path.mkdir(exist_ok=True)
     
     image_extensions = {'.jpg', '.jpeg', '.png'}

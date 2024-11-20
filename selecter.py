@@ -42,14 +42,14 @@ def group_images_by_prefix(
     return dict(image_groups)
 
 def select_best_images(
-    input_dir: str, 
+    input_dir: str | Path, 
+    output_path: Path,
     config: ImageSelectionConfig = ImageSelectionConfig()
 ) -> None:
     """
     Select and copy the best matching images from each prefix group
     """
     input_path = Path(input_dir)
-    output_path = input_path / config.output_folder
     output_path.mkdir(exist_ok=True)
     
     image_groups = group_images_by_prefix(input_path, config)

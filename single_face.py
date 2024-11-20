@@ -44,10 +44,12 @@ def detect_face_count(image_path: Path) -> int:
     
     return len(faces)
 
-def filter_single_face_images(input_folder: str | Path, output_folder: str = "single_face") -> None:
+def filter_single_face_images(
+    input_folder: str | Path,
+    output_path: Path
+) -> None:
     """Copy images containing exactly one face to the output folder."""
     input_path = Path(input_folder)
-    output_path = input_path.parent / output_folder
     output_path.mkdir(exist_ok=True)
     
     image_extensions = {'.jpg', '.jpeg', '.png'}
