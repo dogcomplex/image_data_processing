@@ -1,18 +1,19 @@
 # Image Processing Pipeline
 
-A Python-based image processing pipeline that handles batch processing of images through three main stages:
+A Python-based image processing pipeline for batch processing images through four stages:
 
-1. **Image Selection**: Selects the best quality images from groups of similar files based on naming prefixes and target resolution
+1. **Image Selection**: Selects best quality images from groups of similar files
 2. **Image Resizing**: Resizes selected images while maintaining aspect ratio
-3. **Face-Centered Cropping**: Detects faces in images and crops around them to create consistent square outputs
+3. **Face-Centered Cropping**: Detects faces and crops around them for consistent square outputs
+4. **Single Face Filter**: Optional filter to select only images with exactly one face
 
 ## Features
 
-- Groups images by filename prefixes for smart selection
+- Smart image grouping by filename prefixes
 - Maintains aspect ratios during resizing
-- Uses OpenCV for face detection
-- Creates debug visualizations of face detection
-- Processes multiple image formats (JPG, PNG, JPEG)
+- OpenCV-based face detection and centering
+- Debug visualizations for face detection
+- Multi-format support (JPG, PNG, JPEG, WEBP)
 - Configurable output quality and target sizes
 
 ## Installation
@@ -24,11 +25,10 @@ git clone git@github.com:dogcomplex/image_data_processing.git
 # Install dependencies
 pip install pillow opencv-python numpy
 
-# download face detector for cropping
+# Download face detector
 cd image_data_processing
 curl -o haarcascade_frontalface_default.xml https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml
 ```
-
 
 ## Usage
 
@@ -37,34 +37,18 @@ Basic usage:
 python main.py <input_directory>
 ```
 
-
 Advanced usage with options:
 ```bash
-python main.py <input_directory> \\
-    --target-size 512 \\
-    --file-pattern "*.jpg,*.jpeg,*.png" \\
-    --prefix-separator "_" \\
+python main.py <input_directory> \
+    --target-size 512 \
+    --file-pattern "*.jpg,*.jpeg,*.png,*.webp" \
+    --prefix-separator "_" \
     --jpeg-quality 95
 ```
 
-Using this for prepping for LoRA training:
-```
-process:
-- go to webpage with images and view all, scroll down with autoscroller plugin till all on the same page
-- DownThemAll plugin to scrape to folder 
-- run some image selection (pruning alt sizes), resizing (to target of e.g. 768 or 512), then face detect and crop to square of each
-- https://github.com/dogcomplex/image_data_processing (scripts just generated on the fly for all that by claude lol)
-- (optional) pick some best subset manually
-- Install ComfyUI node using manager.  git repo: https://github.com/edenartlab/sd-lora-trainer?tab=readme-ov-file
-- open workflow: https://github.com/edenartlab/sd-lora-trainer/blob/main/ComfyUI_workflows/train_lora.json
-- configure lora trainer according to docs (did defaults, checkpoint every 50, 800 steps total, disable ti, dreamshaper-8 SD1.5 model, entered lora name and input dir, set for face recognition)
-- queue, let bake 25ish mins on 3090rtx
-```
-
-
 ### Parameters
 
-- `input_directory`: Folder containing source images
+- `input_directory`: Source images folder
 - `--target-size`: Target resolution (default: 512)
 - `--file-pattern`: File patterns to match (default: "*.jpg,*.jpeg,*.png")
 - `--prefix-separator`: Character separating prefix from filename (default: "_")
@@ -72,26 +56,39 @@ process:
 
 ## Pipeline Stages
 
-1. **Selection** (`selecter.py`): Groups images by prefix and selects the best resolution match from each group
-2. **Resizing** (`resizer.py`): Resizes images to target size while maintaining aspect ratio
-3. **Face Cropping** (`face_crop.py`): Detects faces and crops images to center them
+1. **Selection** (`selecter.py`): Groups similar images by prefix and selects best resolution match
+2. **Resizing** (`resizer.py`): Resizes images to target size while preserving aspect ratio
+3. **Face Cropping** (`face_crop.py`): Detects faces and creates centered square crops
+4. **Single Face Filter** (`single_face.py`): Optional filter for single-face images
 
 ## Output Structure
 
-The pipeline creates three folders:
-- `1_selected/`: Best images selected from each group
-- `2_resized/`: Resized versions of selected images
-- `3_face_cropped/`: Final square crops centered on detected faces
+The pipeline creates these folders:
+- `1_selected/`: Best images from each group
+- `2_resized/`: Resized versions
+- `3_face_cropped/`: Square crops centered on faces
+- `4_single_face/`: Optional filtered set of single-face images
+- `face_cropped_debug/`: Debug visualizations showing:
+  - Face detection centers (green dots)
+  - Crop regions (green rectangles)
 
-## Debug Output
+## LoRA Training Integration
 
-When face detection is running, debug images are saved to a `face_cropped_debug` folder showing:
-- Detected face centers (green dots)
-- Planned crop regions (green rectangles)
+For preparing images for LoRA training:
 
-## License
+1. Collect source images:
+   - Use browser plugins like AutoScroller and DownThemAll
+   - Save to input folder
 
-MIT License
+2. Process images:
+   - Run pipeline for selection, resizing, and face cropping
+   - Optionally filter to single-face subset
+   - Target size typically 512 or 768
+
+3. Train LoRA:
+   - Install ComfyUI node from [sd-lora-trainer](https://github.com/edenartlab/sd-lora-trainer)
+   - Use workflow: [train_lora.json](https://github.com/edenartlab/sd-lora-trainer/blob/main/ComfyUI_workflows/train_lora.json)
+   - Configure training parameters (e.g., 800 steps, checkpoint every 50)
 
 Copyright (c) 2024 Warren Koch
 
