@@ -1,11 +1,13 @@
 # Image Processing Pipeline
 
-A Python-based image processing pipeline for batch processing images through four stages:
+A Python-based image processing pipeline for batch processing images through six stages:
 
 1. **Image Selection**: Selects best quality images from groups of similar files
-2. **Image Resizing**: Resizes selected images while maintaining aspect ratio
-3. **Face-Centered Cropping**: Detects faces and crops around them for consistent square outputs
-4. **Single Face Filter**: Optional filter to select only images with exactly one face
+2. **Single Face Filter**: Filters for images containing exactly one face
+3. **Face Zooming**: Zooms in on detected faces with configurable zoom factor
+4. **Resolution Filter**: Filters out low-resolution results
+5. **Final Resize**: Resizes images to target dimensions
+6. **Face Matching**: Groups similar faces together (optional)
 
 ## Features
 
@@ -43,7 +45,9 @@ python main.py <input_directory> \
     --target-size 512 \
     --file-pattern "*.jpg,*.jpeg,*.png,*.webp" \
     --prefix-separator "_" \
-    --jpeg-quality 95
+    --jpeg-quality 95 \
+    --zoom-factor 2.5 \
+    --legacy-pipeline  # Use old pipeline without face zooming
 ```
 
 ### Parameters
@@ -53,24 +57,36 @@ python main.py <input_directory> \
 - `--file-pattern`: File patterns to match (default: "*.jpg,*.jpeg,*.png")
 - `--prefix-separator`: Character separating prefix from filename (default: "_")
 - `--jpeg-quality`: Output JPEG quality (default: 95)
+- `--zoom-factor`: Face zoom multiplier (default: 2.5)
+- `--legacy-pipeline`: Use original pipeline without face zooming
 
 ## Pipeline Stages
 
-1. **Selection** (`selecter.py`): Groups similar images by prefix and selects best resolution match
-2. **Resizing** (`resizer.py`): Resizes images to target size while preserving aspect ratio
-3. **Face Cropping** (`face_crop.py`): Detects faces and creates centered square crops
-4. **Single Face Filter** (`single_face.py`): Optional filter for single-face images
+### Default Pipeline (with face zooming)
+1. **Selection**: Groups similar images by prefix and selects best resolution match
+2. **Single Face Filter**: Filters for images with exactly one face
+3. **Face Zooming**: Zooms in on detected faces
+4. **Resolution Filter**: Removes low-quality results
+5. **Final Resize**: Resizes to target dimensions
+6. **Face Matching**: Groups similar faces together (optional)
+
+### Legacy Pipeline
+Available via --legacy-pipeline flag
+1. **Selection**: Groups and selects best images
+2. **Resizing**: Basic image resizing
+3. **Face Cropping**: Center-crop around faces
+4. **Single Face Filter**: Optional single-face filtering
+5. **Face Matching**: Groups similar faces together (optional)
 
 ## Output Structure
 
-The pipeline creates these folders:
+The default pipeline creates these folders:
 - `1_selected/`: Best images from each group
-- `2_resized/`: Resized versions
-- `3_face_cropped/`: Square crops centered on faces
-- `4_single_face/`: Optional filtered set of single-face images
-- `face_cropped_debug/`: Debug visualizations showing:
-  - Face detection centers (green dots)
-  - Crop regions (green rectangles)
+- `2_single_face/`: Images with exactly one face
+- `3_zoomed/`: Face-zoomed versions
+- `4_filtered/`: Resolution-filtered subset
+- `5_final/`: Final resized images
+- `6_identified/`: Optional face-matched groups
 
 ## LoRA Training Integration
 

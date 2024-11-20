@@ -181,8 +181,8 @@ def main():
                        help='Output folder for face-cropped images (default: face_cropped)')
     parser.add_argument('--single-face-folder', default="single_face",
                        help='Output folder for single-face images (default: single_face)')
-    parser.add_argument('--zoom-face', action='store_true',
-                       help='Use face-zooming pipeline instead of default')
+    parser.add_argument('--legacy-pipeline', action='store_true',
+                       help='Use legacy pipeline instead of face-zooming pipeline')
     parser.add_argument('--zoom-factor', type=float, default=2.5,
                        help='Face zoom factor (default: 2.5)')
     parser.add_argument('--identified-folder', default="identified",
@@ -197,15 +197,15 @@ def main():
         prefix_separator=args.prefix_separator,
         jpeg_quality=args.jpeg_quality,
         zoom_factor=args.zoom_factor,
-        face_tolerance=0.6,  # Could add as CLI arg
-        min_cluster_size=3   # Could add as CLI arg
+        face_tolerance=0.6,
+        min_cluster_size=3
     )
     
     try:
-        if args.zoom_face:
-            process_images_zoom_face(args.input_dir, config)
-        else:
+        if args.legacy_pipeline:
             process_images(args.input_dir, config)
+        else:
+            process_images_zoom_face(args.input_dir, config)
             
         print("\nImage processing pipeline completed successfully!")
         
