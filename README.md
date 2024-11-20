@@ -23,6 +23,10 @@ git clone <repository-url>
 
 # Install dependencies
 pip install pillow opencv-python numpy
+
+# download face detector for cropping
+cd image_data_processing
+curl -o haarcascade_frontalface_default.xml https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml
 ```
 
 
