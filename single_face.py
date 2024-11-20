@@ -18,6 +18,7 @@ def detect_face_count(image_path: Path) -> int:
         if Path(path).exists():
             face_cascade = cv2.CascadeClassifier(path)
             if not face_cascade.empty():
+                print(f"Loaded cascade from: {path}")
                 break
     
     if face_cascade is None or face_cascade.empty():
@@ -31,6 +32,16 @@ def detect_face_count(image_path: Path) -> int:
         
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    
+    # Debug: Draw rectangles around detected faces
+    for (x, y, w, h) in faces:
+        cv2.rectangle(image, (x, y), (x+w, y+h), (255, 0, 0), 2)
+    
+    # Save debug image
+    debug_path = image_path.parent / "debug_faces"
+    debug_path.mkdir(exist_ok=True)
+    cv2.imwrite(str(debug_path / image_path.name), image)
+    
     return len(faces)
 
 def filter_single_face_images(input_folder: str | Path, output_folder: str = "single_face") -> None:
