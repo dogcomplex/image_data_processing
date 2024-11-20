@@ -19,10 +19,14 @@ A Python-based image processing pipeline that handles batch processing of images
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:dogcomplex/image_data_processing.git
 
 # Install dependencies
 pip install pillow opencv-python numpy
+
+# download face detector for cropping
+cd image_data_processing
+curl -o haarcascade_frontalface_default.xml https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml
 ```
 
 
@@ -41,6 +45,20 @@ python main.py <input_directory> \\
     --file-pattern "*.jpg,*.jpeg,*.png" \\
     --prefix-separator "_" \\
     --jpeg-quality 95
+```
+
+Using this for prepping for LoRA training:
+```
+process:
+- go to imdb page, images, view all, scroll down with autoscroller plugin till all on the same page
+- DownThemAll plugin to scrape to folder 
+- run some image selection (pruning alt sizes), resizing (to target of e.g. 768 or 512), then face detect and crop to square of each
+- https://github.com/dogcomplex/image_data_processing (scripts just generated on the fly for all that by claude lol)
+- (optional) pick some best subset manually
+- Install ComfyUI node using manager.  git repo: https://github.com/edenartlab/sd-lora-trainer?tab=readme-ov-file
+- open workflow: https://github.com/edenartlab/sd-lora-trainer/blob/main/ComfyUI_workflows/train_lora.json
+- configure lora trainer according to docs (did defaults, checkpoint every 50, 800 steps total, disable ti, dreamshaper-8 SD1.5 model, entered lora name and input dir)
+- queue, let bake 25ish mins on 3090rtx
 ```
 
 
