@@ -19,7 +19,7 @@ A Python-based image processing pipeline that handles batch processing of images
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:dogcomplex/image_data_processing.git
 
 # Install dependencies
 pip install pillow opencv-python numpy
