@@ -1,0 +1,50 @@
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Dependencies and packages
+node_modules/
+venv/
+.env/
+__pycache__/
+*.py[cod]
+*.so
+pip-log.txt
+
+# Build and distribution
+dist/
+build/
+*.egg-info/
+coverage/
+.coverage
+.pytest_cache/
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# Media and binary files (keeping your existing entries)
+*.xml
+*.jpg
+*.png
+*.jpeg
+*.webp
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
