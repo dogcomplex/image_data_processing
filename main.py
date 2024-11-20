@@ -3,6 +3,7 @@ import argparse
 from selecter import select_best_images, ImageSelectionConfig
 from resizer import batch_resize_images
 from face_crop import process_folder
+from single_face import filter_single_face_images
 
 def create_pipeline_folders(base_path: Path) -> tuple[Path, Path, Path]:
     """Create and return paths for each stage of the pipeline"""
@@ -23,7 +24,8 @@ def process_images(
     jpeg_quality: int = 95,
     selected_folder: str = "selected",
     resized_folder: str = "resized",
-    face_cropped_folder: str = "face_cropped"
+    face_cropped_folder: str = "face_cropped",
+    single_face_folder: str = "single_face"
 ) -> None:
     """Run the complete image processing pipeline"""
     input_path = Path(input_dir)
@@ -75,6 +77,18 @@ def process_images(
     face_cropped_path = input_path / face_cropped_folder
     cropped_files = list(face_cropped_path.glob("*.*"))
     print(f"Face cropped {len(cropped_files)} files")
+    
+    # Step 4: Filter single face images
+    print("\n=== Step 4: Filtering single face images ===")
+    filter_single_face_images(
+        face_cropped_path,
+        output_folder=single_face_folder
+    )
+    
+    # Count files in single_face folder
+    single_face_path = input_path / single_face_folder
+    single_face_files = list(single_face_path.glob("*.*"))
+    print(f"Found {len(single_face_files)} images with single faces")
 
 def main():
     parser = argparse.ArgumentParser(description='Process images through selection, resizing, and face cropping')
@@ -93,6 +107,8 @@ def main():
                        help='Output folder for resized images (default: resized)')
     parser.add_argument('--face-cropped-folder', default="face_cropped",
                        help='Output folder for face-cropped images (default: face_cropped)')
+    parser.add_argument('--single-face-folder', default="single_face",
+                       help='Output folder for single-face images (default: single_face)')
     
     args = parser.parse_args()
     
@@ -118,7 +134,8 @@ def main():
             jpeg_quality=args.jpeg_quality,
             selected_folder=args.selected_folder,
             resized_folder=args.resized_folder,
-            face_cropped_folder=args.face_cropped_folder
+            face_cropped_folder=args.face_cropped_folder,
+            single_face_folder=args.single_face_folder
         )
         print("\nImage processing pipeline completed successfully!")
         
