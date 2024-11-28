@@ -78,49 +78,36 @@ def process_target_images(
         return
     
     image_extensions = {'.jpg', '.jpeg', '.png'}
-    
-    # Collect all image paths
-    image_paths = []
-    for ext in image_extensions:
-        image_paths.extend(target_dir.glob(f"*{ext}"))
-    
-    logging.info(f"Found {len(image_paths)} target images to process")
-    
-    if not image_paths:
-        logging.warning(f"No images found in {target_dir}")
-        return
-    
-    # Process images in parallel
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = [
-            executor.submit(compute_similarity, img_path, reference_encodings)
-            for img_path in image_paths
-        ]
-        
-        # Collect results
-        similarities = [future.result() for future in futures]
-    
-    # Copy files with similarity score prefix if they meet threshold
     processed_count = 0
     passed_threshold = 0
-    for img_path, similarity in similarities:
-        logging.info(f"Processing result for {img_path.name}: score = {similarity:.3f}")
-        try:
-            if similarity >= threshold:
-                score = int(similarity * 100)
-                new_name = f"{score:03d}_{img_path.name}"
-                new_path = output_dir / new_name
-                logging.info(f"Attempting to copy {img_path} to {new_path}")
-                shutil.copy2(img_path, new_path)
-                passed_threshold += 1
-                logging.info(f"Successfully copied {img_path.name} with score {score}")
-            else:
-                logging.info(f"Skipping {img_path.name}: score {similarity:.3f} below threshold {threshold}")
-        except Exception as e:
-            logging.error(f"Failed to copy {img_path}: {str(e)}")
-        processed_count += 1
-        if processed_count % 10 == 0:
-            logging.info(f"Processed {processed_count}/{len(similarities)} images")
+    
+    # Process images one at a time with parallel face detection
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        for ext in image_extensions:
+            for img_path in target_dir.glob(f"*{ext}"):
+                # Process single image
+                future = executor.submit(compute_similarity, img_path, reference_encodings)
+                img_path, similarity = future.result()
+                
+                # Handle result immediately
+                logging.info(f"Processing result for {img_path.name}: score = {similarity:.3f}")
+                try:
+                    if similarity >= threshold:
+                        score = int(similarity * 100)
+                        new_name = f"{score:03d}_{img_path.name}"
+                        new_path = output_dir / new_name
+                        logging.info(f"Attempting to copy {img_path} to {new_path}")
+                        shutil.copy2(img_path, new_path)
+                        passed_threshold += 1
+                        logging.info(f"Successfully copied {img_path.name} with score {score}")
+                    else:
+                        logging.info(f"Skipping {img_path.name}: score {similarity:.3f} below threshold {threshold}")
+                except Exception as e:
+                    logging.error(f"Failed to copy {img_path}: {str(e)}")
+                
+                processed_count += 1
+                if processed_count % 10 == 0:
+                    logging.info(f"Processed {processed_count} images")
     
     logging.info(f"Successfully processed {processed_count} images")
     logging.info(f"Copied {passed_threshold} images meeting threshold {threshold:.2f}")
