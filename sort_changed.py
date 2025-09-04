@@ -4,14 +4,67 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import shutil
-from typing import Tuple
+from typing import Tuple, Dict, Literal
 from PIL import Image
-import io
+from dataclasses import dataclass
+from skimage.metrics import structural_similarity as ssim
+import imagehash
 
-def compute_frame_changes_webp(video_path: Path) -> Tuple[Path, float]:
+ScoreMethod = Literal['mad', 'mse', 'ssim', 'phash', 'all']
+
+@dataclass
+class ScoringConfig:
+    """Configuration for video change scoring"""
+    method: ScoreMethod = 'all'
+    mad_scale: float = 50.0  # Scale factor for Mean Absolute Difference
+    mse_scale: float = 1000.0  # Scale factor for Mean Squared Error
+    ssim_threshold: float = 0.05  # Minimum SSIM difference to count as change
+    phash_threshold: float = 5  # Maximum perceptual hash difference for similar frames
+    drastic_change_penalty: float = 0.5  # Penalty for scene cuts/drastic changes
+
+def compute_frame_scores(prev_frame: np.ndarray, curr_frame: np.ndarray) -> Dict[str, float]:
     """
-    Compute average frame-to-frame changes in WebP animation using PIL.
-    Returns tuple of (path, change_score) where change_score is 0-1.
+    Compute various frame difference scores between two frames.
+    Returns dictionary of scoring method -> normalized score (0-1).
+    """
+    # Convert frames to grayscale if needed
+    if len(prev_frame.shape) == 3:
+        prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_RGB2GRAY)
+        curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2GRAY)
+    else:
+        prev_gray = prev_frame
+        curr_gray = curr_frame
+
+    scores = {}
+    
+    # 1. Mean Absolute Difference (sensitive to small changes)
+    mad = np.mean(np.abs(curr_gray.astype(float) - prev_gray.astype(float)))
+    scores['mad'] = min(1.0, mad / 50.0)
+    
+    # 2. Mean Squared Error (more sensitive to larger changes)
+    mse = np.mean((curr_gray.astype(float) - prev_gray.astype(float)) ** 2)
+    scores['mse'] = min(1.0, mse / 1000.0)
+    
+    # 3. Structural Similarity (focuses on structural changes)
+    similarity = ssim(prev_gray, curr_gray)
+    scores['ssim'] = 1.0 - similarity  # Convert to difference score
+    
+    # 4. Perceptual Hash (good for detecting scene changes)
+    prev_img = Image.fromarray(prev_gray)
+    curr_img = Image.fromarray(curr_gray)
+    prev_hash = imagehash.average_hash(prev_img)
+    curr_hash = imagehash.average_hash(curr_img)
+    hash_diff = prev_hash - curr_hash
+    scores['phash'] = min(1.0, hash_diff / 32.0)  # Normalize to 0-1
+    
+    return scores
+
+def compute_frame_changes_webp(
+    video_path: Path,
+    config: ScoringConfig
+) -> Tuple[Path, float]:
+    """
+    Compute frame changes in WebP using multiple scoring methods.
     """
     try:
         with Image.open(video_path) as img:
@@ -19,97 +72,83 @@ def compute_frame_changes_webp(video_path: Path) -> Tuple[Path, float]:
                 logging.warning(f"{video_path} is not animated")
                 return video_path, 0.0
 
+            # Initialize score accumulators
+            total_scores = {'mad': 0.0, 'mse': 0.0, 'ssim': 0.0, 'phash': 0.0}
+            drastic_changes = 0
+            frame_count = 1
+
             # Get first frame
             img.seek(0)
-            prev_frame = np.array(img.convert('L'))
-            total_diff = 0.0
-            frame_count = 1
+            prev_frame = np.array(img.convert('RGB'))
 
             # Process subsequent frames
             try:
                 while True:
                     img.seek(img.tell() + 1)
-                    frame = np.array(img.convert('L'))
+                    curr_frame = np.array(img.convert('RGB'))
                     
-                    # Compute mean absolute difference between frames
-                    diff = np.mean(np.abs(frame.astype(float) - prev_frame.astype(float)))
-                    total_diff += diff
+                    # Compute all scores for this frame pair
+                    scores = compute_frame_scores(prev_frame, curr_frame)
                     
-                    prev_frame = frame
+                    # Track drastic changes (potential scene cuts)
+                    if scores['phash'] > 0.5:  # High perceptual hash difference
+                        drastic_changes += 1
+                    
+                    # Accumulate scores
+                    for method in total_scores:
+                        total_scores[method] += scores[method]
+                    
+                    prev_frame = curr_frame
                     frame_count += 1
             except EOFError:
-                pass  # End of frames
+                pass
 
             if frame_count < 2:
                 return video_path, 0.0
 
-            # Normalize score to 0-1 range (typical diffs are 0-255)
-            avg_diff = total_diff / (frame_count - 1)
-            normalized_score = min(1.0, avg_diff / 50.0)  # Scale factor of 50 chosen empirically
+            # Calculate final scores
+            avg_scores = {method: score / (frame_count - 1) 
+                         for method, score in total_scores.items()}
             
-            logging.info(f"{video_path.name}: {frame_count} frames, score {normalized_score:.3f}")
-            return video_path, normalized_score
+            # Apply drastic change penalty
+            drastic_change_ratio = drastic_changes / (frame_count - 1)
+            penalty = 1.0 - (drastic_change_ratio * config.drastic_change_penalty)
+
+            # Compute final score based on method
+            if config.method == 'mad':
+                final_score = avg_scores['mad']
+            elif config.method == 'mse':
+                final_score = avg_scores['mse']
+            elif config.method == 'ssim':
+                final_score = avg_scores['ssim']
+            elif config.method == 'phash':
+                final_score = avg_scores['phash']
+            else:  # 'all' - weighted combination
+                final_score = (
+                    0.3 * avg_scores['mad'] +
+                    0.2 * avg_scores['mse'] +
+                    0.3 * avg_scores['ssim'] +
+                    0.2 * avg_scores['phash']
+                )
+
+            # Apply penalty
+            final_score *= penalty
+            
+            logging.info(f"{video_path.name}: {frame_count} frames, "
+                        f"scores={avg_scores}, penalty={penalty:.2f}, "
+                        f"final={final_score:.3f}")
+            
+            return video_path, final_score
 
     except Exception as e:
         logging.error(f"Error processing {video_path}: {e}")
-        return video_path, 0.0
-
-def compute_frame_changes_gif(video_path: Path) -> Tuple[Path, float]:
-    """
-    Compute average frame-to-frame changes in GIF using PIL.
-    Returns tuple of (path, change_score) where change_score is 0-1.
-    """
-    try:
-        with Image.open(video_path) as img:
-            if not getattr(img, 'is_animated', False):
-                logging.warning(f"{video_path} is not animated")
-                return video_path, 0.0
-
-            frames = []
-            try:
-                while True:
-                    frames.append(np.array(img.convert('L')))
-                    img.seek(img.tell() + 1)
-            except EOFError:
-                pass
-
-            if len(frames) < 2:
-                return video_path, 0.0
-
-            # Compute differences between consecutive frames
-            total_diff = 0.0
-            for i in range(len(frames) - 1):
-                diff = np.mean(np.abs(frames[i+1].astype(float) - frames[i].astype(float)))
-                total_diff += diff
-
-            # Normalize score
-            avg_diff = total_diff / (len(frames) - 1)
-            normalized_score = min(1.0, avg_diff / 50.0)
-
-            logging.info(f"{video_path.name}: {len(frames)} frames, score {normalized_score:.3f}")
-            return video_path, normalized_score
-
-    except Exception as e:
-        logging.error(f"Error processing {video_path}: {e}")
-        return video_path, 0.0
-
-def compute_frame_changes(video_path: Path) -> Tuple[Path, float]:
-    """
-    Compute average frame-to-frame changes based on file type.
-    Returns tuple of (path, change_score) where change_score is 0-1.
-    """
-    if video_path.suffix.lower() == '.webp':
-        return compute_frame_changes_webp(video_path)
-    elif video_path.suffix.lower() == '.gif':
-        return compute_frame_changes_gif(video_path)
-    else:
-        logging.error(f"Unsupported file format: {video_path}")
         return video_path, 0.0
 
 def sort_by_changes(
     target_dir: str | Path,
     output_dir: str | Path = None,
-    num_threads: int = 4
+    num_threads: int = 4,
+    scoring_method: ScoreMethod = 'all'
 ) -> None:
     """
     Sort videos by amount of frame-to-frame changes.
@@ -118,6 +157,7 @@ def sort_by_changes(
         target_dir: Directory containing videos to analyze
         output_dir: Output directory (default: ./processed/sorted_changed)
         num_threads: Number of parallel processing threads
+        scoring_method: Scoring method to use ('mad', 'mse', 'ssim', 'phash', or 'all')
     """
     target_path = Path(target_dir)
     if not target_path.exists():
@@ -136,7 +176,7 @@ def sort_by_changes(
         futures = []
         for ext in video_extensions:
             for video_path in target_path.glob(f"*{ext}"):
-                futures.append(executor.submit(compute_frame_changes, video_path))
+                futures.append(executor.submit(compute_frame_changes_webp, video_path, ScoringConfig(method=scoring_method)))
 
         # Process results and copy files
         processed_count = 0
@@ -169,6 +209,7 @@ def main():
     parser.add_argument('--output-dir', help='Directory for sorted output (default: sorted_changed)')
     parser.add_argument('--threads', type=int, default=4, help='Number of processing threads')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--scoring-method', type=str, default='all', help='Scoring method to use')
     
     args = parser.parse_args()
     
@@ -177,7 +218,7 @@ def main():
     logging.basicConfig(level=log_level, format='%(asctime)s - %(message)s')
     
     try:
-        sort_by_changes(args.target_dir, args.output_dir, args.threads)
+        sort_by_changes(args.target_dir, args.output_dir, args.threads, args.scoring_method)
     except Exception as e:
         logging.error(f"Error during processing: {e}")
         raise
